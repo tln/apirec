@@ -1,5 +1,6 @@
 const express = require('express');
 const app = express()
+exports.app = app;
 
 app.get('/', (req, res) => res.send('Hello World!'))
 
@@ -30,7 +31,7 @@ function staticPath(res) {
 async function sendSaved(req, res) {
   const path = staticPath(req);
   if (exists(path)) {
-    res.sendFile(path));
+    res.sendFile(path);
     return true;
   } else {
     return false;
@@ -50,7 +51,7 @@ async function sendError(req, res) {
   // TODO
 }
 
-function setMode(mode) {
+exports.setMode = function setMode(mode) {
   if (!(mode in MODES)) throw `Invalid mode, pass one of ${Object.keys(MODES).join(' ')}`;
   MODE = MODES[mode];
   MODE.name = mode;
@@ -82,7 +83,4 @@ const MODES = {
   }
 };
 
-require('fncli')(function (mode='proxy', {port=8888}) {
-  setMode(mode);
-  app.listen(port, () => console.log(`Example app listening on port ${port}!`))
-});
+                                                                                                                                                                                      
