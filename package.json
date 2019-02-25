@@ -1,0 +1,14 @@
+{
+  "name": "apirec",
+  "version": "0.0.1",
+  "description": "HTTP JSON API Recorder. Record API responses and replay them offline",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "fncli": "^0.1.0"
+  }
+}
