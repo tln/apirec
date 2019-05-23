@@ -1,17 +1,28 @@
 const express = require('express');
-const app = express()
+const app = express();
 exports.app = app;
+const state = require('./state');
 
-app.get('/', (req, res) => res.send('Hello World!'))
+require('./ui')(app);
 
-app.all('/backend', (req, res, next) => {
+/**
+ * Handle the requests to the upstream,
+ * using the mode in question.
+ */
+app.all(state.PATH+'/*', (req, res, next) => {
   (async () => {
-    let found = MODE.useSaved && await sendSaved(req, res);
+    console.log(req.path, MODE);
+    let reqInfo = {url: req.path, status: 'In progress'};
+    state.REQUESTS.push(reqInfo)
+    app.emit('update');
+
+    let found = MODE.useSaved && await sendSaved(req, res, reqInfo);
+    console.log(found);
     if (!found) {
-      if (fallbackToBackend) {
-        await sendBackendRes(req, res, MODE.saveRequests, MODE.saveIfExists);
+      if (MODE.useBackend) {
+        await sendBackendRes(req, res, reqInfo, MODE.saveRequests, MODE.saveIfExists);
       } else {
-        await sendError(req, res);
+        await sendError(req, res, reqInfo);
       }
     }
   })().then(next);
@@ -19,21 +30,29 @@ app.all('/backend', (req, res, next) => {
 
 const {promisify} = require('util');
 const fs = require('fs');
-const {exists} = promisify(fs.exists);
-const {join} = require('path');
+const exists = promisify(fs.exists);
+const writeFile = promisify(fs.writeFile);
+const readFile = promisify(fs.readFile);
+const {join, dirname} = require('path');
 
 function staticPath(res) {
   // TODO add method...
   // TODO handle numbers -> :id
-  return join(__dirname, '..', 'static/backend', res.path + '.json');
+  return join(__dirname, '_saved', res.path + '.json');
 }
 
-async function sendSaved(req, res) {
+async function sendSaved(req, res, reqInfo) {
   const path = staticPath(req);
-  if (exists(path)) {
-    res.sendFile(path);
+  reqInfo.status = 'Looking';
+  app.emit('update');
+  try {
+    let data = await readFile(path, 'utf-8');
+    reqInfo.status = 'Sent static';
+    app.emit('update');
+    res.send(data);
     return true;
-  } else {
+  } catch(e) {
+    console.log(e);
     return false;
   }
 }
@@ -42,9 +61,51 @@ async function saveRes(req, res) {
   // TODO save res
 }
 
-async function sendBackendRes(req, res, save, saveIfExists) {
+const {default: fetch} = require('node-fetch');
+async function sendBackendRes(req, res, reqInfo, save, saveIfExists) {
   // TODO contact backend...
-  // TODO save request
+  let url = state.upstream + req.path;
+  let headers = filterHeaders(req.headers);
+  console.log('fetching', url, req.headers);
+  let resp = await fetch(url, {
+    method: req.method,
+    headers
+  });
+  let body = await resp.text();
+  console.log('got', body);
+  reqInfo.status = 'Got response';
+  app.emit('update');
+
+  // TODO unless we save headers we shouldn't send the server headers here
+  console.log(resp.headers.raw());
+  // res.set(resp.headers);
+
+  res.send(body);
+
+  if (save) {
+    let path = staticPath(req);
+    if (!saveIfExists || !(await exists(path))) {
+      await saveRequest(reqInfo, path, body);
+    }
+  }
+}
+
+async function saveRequest(reqInfo, path, body) {
+  reqInfo.status = 'Saving';
+  app.emit('update');
+
+  fs.mkdirSync(dirname(path), { recursive: true });
+  await writeFile(path, body);
+
+  reqInfo.status = 'Saved';
+  app.emit('update');
+}
+
+function filterHeaders(headers) {
+  headers = Object.assign(headers);
+  headers.accept = 'application/json';
+  delete headers.host;
+  return headers;
 }
 
 async function sendError(req, res) {
@@ -52,35 +113,38 @@ async function sendError(req, res) {
 }
 
 exports.setMode = function setMode(mode) {
+  state.mode = mode
   if (!(mode in MODES)) throw `Invalid mode, pass one of ${Object.keys(MODES).join(' ')}`;
   MODE = MODES[mode];
   MODE.name = mode;
 }
-let MODE = 'proxy';
+
 const MODES = {
   standalone: {
     useSaved: true,
-    fallbackToBackend: false,
+    useBackend: false,
     desc: 'use saved requests for all requests. error if missing requests.'
   },
   proxy: {
     useSaved: false,
+    useBackend: true,
     saveRequests: true,
-    saveIfExists: true,
+    saveIfExists: false,
     desc: 'contact backend for all requests. save missing requests.'
   },
   update: {
     useSaved: false,
+    useBackend: true,
     saveRequests: true,
     saveIfExists: true,
     desc: 'contact backend for all requests. save all requests.'
   },
   refresh: {
     useSaved: true,
-    fallbackToBackend: true,
+    useBackend: true,
     saveRequests: true,
     desc: 'use saved request for all requests. contact backend and save missing requests.'
   }
 };
-
+let MODE = MODES.proxy;
                                                                                                                                                                                       
