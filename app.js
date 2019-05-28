@@ -1,6 +1,9 @@
 const express = require('express');
 const app = express();
 exports.app = app;
+const bodyParser = require('body-parser')
+app.use(bodyParser.raw());
+
 const state = require('./state');
 
 require('./ui')(app);
@@ -12,7 +15,7 @@ require('./ui')(app);
 app.all(state.PATH+'/*', (req, res, next) => {
   (async () => {
     console.log(req.path, MODE);
-    let reqInfo = {url: req.path, status: 'In progress'};
+    let reqInfo = {method: req.method, url: req.path, status: 'In progress'};
     state.REQUESTS.push(reqInfo)
     app.emit('update');
 
@@ -36,29 +39,29 @@ const readFile = promisify(fs.readFile);
 const {join, dirname} = require('path');
 
 function staticPath(res) {
-  // TODO add method...
   // TODO handle numbers -> :id
-  return join(__dirname, '_saved', res.path + '.json');
+  // TODO use "http" or "mime" format?
+  return join(__dirname, '_saved', res.path + '/' + res.method + '.json');
 }
 
 async function sendSaved(req, res, reqInfo) {
   const path = staticPath(req);
   reqInfo.status = 'Looking';
   app.emit('update');
+  let json;
   try {
-    let data = await readFile(path, 'utf-8');
-    reqInfo.status = 'Sent static';
-    app.emit('update');
-    res.send(data);
-    return true;
+    json = await readFile(path, 'utf-8');
   } catch(e) {
     console.log(e);
     return false;
   }
-}
+  let {headers, body} = JSON.parse(json);
+  reqInfo.status = 'Sent static';
+  app.emit('update');
 
-async function saveRes(req, res) {
-  // TODO save res
+  res.set(headers);
+  res.send(body);
+  return true;
 }
 
 const {default: fetch} = require('node-fetch');
@@ -66,36 +69,41 @@ async function sendBackendRes(req, res, reqInfo, save, saveIfExists) {
   // TODO contact backend...
   let url = state.upstream + req.path;
   let headers = filterHeaders(req.headers);
-  console.log('fetching', url, req.headers);
+  console.log('fetching', req.method, url, req.headers, req.body);
   let resp = await fetch(url, {
     method: req.method,
-    headers
+    headers,
+    body: req.body,
+    follow: 0,
+    timeout: 5000,
   });
+  console.log('got resp', resp);
   let body = await resp.text();
   console.log('got', body);
   reqInfo.status = 'Got response';
   app.emit('update');
 
   // TODO unless we save headers we shouldn't send the server headers here
-  console.log(resp.headers.raw());
-  // res.set(resp.headers);
-
+  headers = {}
+  resp.headers.forEach((v, k) => headers[k] = v);
+  console.log(headers);
+  res.set(headers);
   res.send(body);
 
   if (save) {
     let path = staticPath(req);
     if (!saveIfExists || !(await exists(path))) {
-      await saveRequest(reqInfo, path, body);
+      await saveRequest(reqInfo, headers, path, body);
     }
   }
 }
 
-async function saveRequest(reqInfo, path, body) {
+async function saveRequest(reqInfo, headers, path, body) {
   reqInfo.status = 'Saving';
   app.emit('update');
 
   fs.mkdirSync(dirname(path), { recursive: true });
-  await writeFile(path, body);
+  await writeFile(path, JSON.stringify({headers, body}, null, 4));
 
   reqInfo.status = 'Saved';
   app.emit('update');
