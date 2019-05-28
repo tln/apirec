@@ -68,6 +68,10 @@ function updater(app) {
       'Cache-Control': 'no-cache',
       'Connection': 'keep-alive'
     });
-    app.on('update', () => res.write("data: " + JSON.stringify({tbody: requestsHTML()}) + "\n\n"));
+    function onUpdate() {
+      res.write("data: " + JSON.stringify({tbody: requestsHTML()}) + "\n\n");
+      app.once('update', onUpdate);
+    }
+    app.once('update', onUpdate);
   };
 }
