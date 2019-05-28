@@ -104,17 +104,22 @@ async function sendBackendRes(req, res, reqInfo, save, saveIfExists) {
   if (save) {
     let path = staticPath(req);
     if (!saveIfExists || !(await exists(path))) {
-      await saveRequest(reqInfo, path, resp.status, headers, body);
+      await saveRequest(reqInfo, path, req, resp.status, headers, body);
     }
   }
 }
 
-async function saveRequest(reqInfo, path, status, headers, body) {
+async function saveRequest(reqInfo, path, req, status, headers, body) {
   reqInfo.status = 'Saving';
   app.emit('update');
 
   fs.mkdirSync(dirname(path), { recursive: true });
-  await writeFile(path, JSON.stringify({status, headers, body}, null, 4));
+  await writeFile(path, JSON.stringify({
+    req: {body: req.body},
+    status,
+    headers,
+    body
+  }, null, 4));
 
   reqInfo.status = 'Saved';
   app.emit('update');
