@@ -2,7 +2,16 @@ const express = require('express');
 const app = express();
 exports.app = app;
 const bodyParser = require('body-parser')
-app.use(bodyParser.raw());
+app.use(
+  [
+    bodyParser.raw({type: '*/*'}),
+    (req, res, next) => {
+      console.log('Request Type:', req.method);
+      console.log('Request Data:', req.body);
+      next();
+    }
+  ]
+);
 
 const state = require('./state');
 
@@ -55,55 +64,57 @@ async function sendSaved(req, res, reqInfo) {
     console.log(e);
     return false;
   }
-  let {headers, body} = JSON.parse(json);
+  let {status, headers, body} = JSON.parse(json);
   reqInfo.status = 'Sent static';
   app.emit('update');
 
+  res.status(status);
   res.set(headers);
   res.send(body);
   return true;
 }
 
-const {default: fetch} = require('node-fetch');
+const axios = require('axios');
 async function sendBackendRes(req, res, reqInfo, save, saveIfExists) {
   // TODO contact backend...
   let url = state.upstream + req.path;
   let headers = filterHeaders(req.headers);
   console.log('fetching', req.method, url, req.headers, req.body);
-  let resp = await fetch(url, {
+  let resp = await axios({
+    url,
     method: req.method,
     headers,
-    body: req.body,
-    follow: 0,
+    data: req.body,
     timeout: 5000,
+    validateStatus: null,
   });
-  console.log('got resp', resp);
-  let body = await resp.text();
+  console.log('got resp', resp.status);
+  let body = resp.data;
   console.log('got', body);
   reqInfo.status = 'Got response';
   app.emit('update');
 
   // TODO unless we save headers we shouldn't send the server headers here
-  headers = {}
-  resp.headers.forEach((v, k) => headers[k] = v);
+  headers = resp.headers;
   console.log(headers);
+  res.status(resp.status);
   res.set(headers);
   res.send(body);
 
   if (save) {
     let path = staticPath(req);
     if (!saveIfExists || !(await exists(path))) {
-      await saveRequest(reqInfo, headers, path, body);
+      await saveRequest(reqInfo, path, resp.status, headers, body);
     }
   }
 }
 
-async function saveRequest(reqInfo, headers, path, body) {
+async function saveRequest(reqInfo, path, status, headers, body) {
   reqInfo.status = 'Saving';
   app.emit('update');
 
   fs.mkdirSync(dirname(path), { recursive: true });
-  await writeFile(path, JSON.stringify({headers, body}, null, 4));
+  await writeFile(path, JSON.stringify({status, headers, body}, null, 4));
 
   reqInfo.status = 'Saved';
   app.emit('update');
