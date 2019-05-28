@@ -27,6 +27,7 @@ function index(req, res) {
 <h2>Recent requests</h2>
 <table>
   <tr>
+    <th>Method</th>
     <th>URL</th>
     <th>Status</th>
     <th>Response</th>
@@ -52,6 +53,7 @@ if (window.EventSource) {
 function requestsHTML() {
   return state.REQUESTS.map(req=>`
     <tr>
+      <td>${req.method}</td>
       <td>${req.url}</td>
       <td>${req.status}</td>
       <td>${req.result}</td>
