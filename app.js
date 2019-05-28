@@ -85,7 +85,7 @@ async function sendBackendRes(req, res, reqInfo, save, saveIfExists) {
     method: req.method,
     headers,
     data: req.body,
-    timeout: 5000,
+    timeout: 15000, // TODO this should be configurable
     validateStatus: null,
   });
   console.log('got resp', resp.status);
