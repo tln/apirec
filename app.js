@@ -46,11 +46,18 @@ const exists = promisify(fs.exists);
 const writeFile = promisify(fs.writeFile);
 const readFile = promisify(fs.readFile);
 const {join, dirname} = require('path');
+const crypto = require('crypto');
 
-function staticPath(res) {
+function staticPath(req) {
   // TODO handle numbers -> :id
   // TODO use "http" or "mime" format?
-  return join(__dirname, '_saved', res.path + '/' + res.method + '.json');
+  let variant = '';
+  if (req.method != 'GET' && req.method != 'OPTIONS') {
+    const hash = crypto.createHash('sha256');
+    hash.update(req.body);
+    variant = '-sha256:' + hash.digest('hex');
+  }
+  return join(__dirname, '..', '_saved', req.path + '/' + req.method + variant + '.json');
 }
 
 async function sendSaved(req, res, reqInfo) {
@@ -94,7 +101,6 @@ async function sendBackendRes(req, res, reqInfo, save, saveIfExists) {
   reqInfo.status = 'Got response';
   app.emit('update');
 
-  // TODO unless we save headers we shouldn't send the server headers here
   headers = resp.headers;
   console.log(headers);
   res.status(resp.status);
