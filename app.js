@@ -2,16 +2,7 @@ const express = require('express');
 const app = express();
 exports.app = app;
 const bodyParser = require('body-parser')
-app.use(
-  [
-    bodyParser.raw({type: '*/*', limit: '10mb'}),
-    (req, res, next) => {
-      console.log('Request Type:', req.method);
-      console.log('Request Data:', req.body);
-      next();
-    }
-  ]
-);
+app.use(bodyParser.raw({type: '*/*', limit: '10mb'}));
 
 const state = require('./state');
 
