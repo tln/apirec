@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 const {app, setMode} = require('./app');
 
 require('fncli')(function (mode='proxy', {port=8888}) {
