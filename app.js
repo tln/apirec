@@ -48,7 +48,7 @@ function staticPath(req) {
     hash.update(req.body);
     variant = '-sha256:' + hash.digest('hex');
   }
-  return join(__dirname, '..', '_saved', req.path + '/' + req.method + variant + '.json');
+  return join('_saved', req.path + '/' + req.method + variant + '.json');
 }
 
 async function sendSaved(req, res, reqInfo) {
@@ -168,4 +168,3 @@ const MODES = {
   }
 };
 let MODE = MODES.proxy;
-                                                                                                                                                                                      
