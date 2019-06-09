@@ -30,7 +30,6 @@ function index(req, res) {
     <th>Method</th>
     <th>URL</th>
     <th>Status</th>
-    <th>Response</th>
   </tr>
   <tbody id="tbody">
     ${requestsHTML()}
@@ -53,10 +52,9 @@ if (window.EventSource) {
 function requestsHTML() {
   return state.REQUESTS.map(req=>`
     <tr>
-      <td>${req.method}</td>
-      <td>${req.url}</td>
+      <td>${req.reqInfo.method}</td>
+      <td>${req.reqInfo.path}</td>
       <td>${req.status}</td>
-      <td>${req.result}</td>
     </tr>
     `).join('');
 }

@@ -14,22 +14,39 @@ require('./ui')(app);
  */
 app.all(state.PATH+'/*', (req, res, next) => {
   (async () => {
-    console.log(req.path, MODE);
-    let reqInfo = {method: req.method, url: req.path, status: 'In progress'};
-    state.REQUESTS.push(reqInfo)
-    app.emit('update');
+    let reqInfo = extractReqInfo(req)
+    let log = createContext(reqInfo);
+    log('In progress', req.path, MODE.name);
 
-    let found = MODE.useSaved && await sendSaved(req, res, reqInfo);
-    console.log(found);
-    if (!found) {
+    let resp;
+    if (MODE.useSaved) resp = await findSaved(reqInfo, log);
+    if (!resp) {
       if (MODE.useBackend) {
-        await sendBackendRes(req, res, reqInfo, MODE.saveRequests, MODE.saveIfExists);
+        resp = await getBackendRes(reqInfo, log);
+        await saveResp(resp, reqInfo, log);
       } else {
-        await sendError(req, res, reqInfo);
+        return sendError(res, reqInfo, log);
       }
     }
+    sendResp(res, resp, log);
   })().then(next);
 });
+
+function extractReqInfo(req) {
+  let {method, path, headers, body, query} = req;
+  headers = filterHeaders(headers);
+  return {method, headers, path, data: method === 'GET' ? query : body};
+}
+
+function createContext(reqInfo) {
+  let ctx = {reqInfo, status: ''};
+  state.REQUESTS.push(ctx);
+  return (status, ...rest) => {
+    console.log(status, ...rest);
+    ctx.status = status;
+    app.emit('update');
+  }
+}
 
 const {promisify} = require('util');
 const fs = require('fs');
@@ -45,81 +62,74 @@ function staticPath(req) {
   let variant = '';
   if (req.method != 'GET' && req.method != 'OPTIONS') {
     const hash = crypto.createHash('sha256');
-    hash.update(req.body);
+    hash.update(req.data);
     variant = '-sha256:' + hash.digest('hex');
   }
   return join('_saved', req.path + '/' + req.method + variant + '.json');
 }
 
-async function sendSaved(req, res, reqInfo) {
-  const path = staticPath(req);
-  reqInfo.status = 'Looking';
-  app.emit('update');
+async function findSaved(reqInfo, log) {
+  const path = staticPath(reqInfo);
+  log('Looking', path);
   let json;
   try {
     json = await readFile(path, 'utf-8');
+    log('Found');
   } catch(e) {
-    console.log(e);
-    return false;
+    log('Not found', e);
+    return null;
   }
   let {status, headers, body} = JSON.parse(json);
-  reqInfo.status = 'Sent static';
-  app.emit('update');
-
-  res.status(status);
-  res.set(headers);
-  res.send(body);
-  return true;
+  return {status, headers, body};
 }
 
 const axios = require('axios');
-async function sendBackendRes(req, res, reqInfo, save, saveIfExists) {
-  // TODO contact backend...
-  let url = state.upstream + req.path;
-  let headers = filterHeaders(req.headers);
-  console.log('fetching', req.method, url, req.headers, req.body);
+async function getBackendRes(reqInfo, log) {
+  let {path, method, headers, data} = reqInfo;
+  let datakey = method === 'GET' ? 'params' : 'data';
+  let url = state.upstream + path;
+
+  log('Fetching', method, url, headers, datakey, data);
   let resp = await axios({
     url,
-    method: req.method,
+    method,
     headers,
-    data: req.body,
+    [datakey]: data,
     timeout: 15000, // TODO this should be configurable
     validateStatus: null,
   });
-  console.log('got resp', resp.status);
-  let body = resp.data;
-  console.log('got', body);
-  reqInfo.status = 'Got response';
-  app.emit('update');
+  log('Got response', resp.status);
+  return {status: resp.status, headers: resp.headers, body: resp.data};
+}
 
-  headers = resp.headers;
-  console.log(headers);
+function sendResp(res, resp, log) {
   res.status(resp.status);
-  res.set(headers);
-  res.send(body);
+  res.set(resp.headers);
+  res.send(resp.body);
+}
 
-  if (save) {
-    let path = staticPath(req);
-    if (!saveIfExists || !(await exists(path))) {
-      await saveRequest(reqInfo, path, req, resp.status, headers, body);
+async function saveResp(resp, reqInfo, log) {
+  if (MODE.saveRequests) {
+    let path = staticPath(reqInfo);
+    if (MODE.saveIfExists || !(await exists(path))) {
+      await saveRequest(resp, reqInfo, path, log);
     }
   }
 }
 
-async function saveRequest(reqInfo, path, req, status, headers, body) {
-  reqInfo.status = 'Saving';
-  app.emit('update');
+async function saveRequest(resp, reqInfo, path, log) {
+  log('Saving');
 
   fs.mkdirSync(dirname(path), { recursive: true });
+  let body;
   await writeFile(path, JSON.stringify({
-    req: {body: req.body},
-    status,
-    headers,
-    body
+    req: {body: reqInfo.data && reqInfo.data.toString()},
+    status: resp.status,
+    headers: resp.headers,
+    body: resp.body
   }, null, 4));
 
-  reqInfo.status = 'Saved';
-  app.emit('update');
+  log('Saved');
 }
 
 function filterHeaders(headers) {
