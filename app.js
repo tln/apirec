@@ -121,9 +121,18 @@ async function saveRequest(resp, reqInfo, path, log) {
   log('Saving');
 
   fs.mkdirSync(dirname(path), { recursive: true });
-  let body;
+
+  let reqBody = reqInfo.data;
+  if (Buffer.isBuffer(reqBody)) {
+    // Ensure buffer serializes nicely
+    reqBody = reqBody.toString();
+  } else if (typeof reqBody == 'object' && Object.keys(reqBody).length == 0) {
+    // Empty set of params. Serialize as "no body".
+    reqBody = undefined;
+  }
+
   await writeFile(path, JSON.stringify({
-    req: {body: reqInfo.data && reqInfo.data.toString()},
+    req: {body: reqBody},
     status: resp.status,
     headers: resp.headers,
     body: resp.body
