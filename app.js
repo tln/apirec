@@ -56,11 +56,26 @@ const readFile = promisify(fs.readFile);
 const {join, dirname} = require('path');
 const crypto = require('crypto');
 
-function staticPath(req) {
-  // TODO handle numbers -> :id
-  // TODO use "http" or "mime" format?
+/**
+ * Determine the static path for a request.
+ * This may be affected by configuration files 
+ * along the path named config.json.
+ * 
+ * @param {*} req 
+ */
+async function staticPath(req) {
+  let config = {hash: true};
+
+  let dir = '_saved'; // TODO base directory should be configurable
+  for (let part of req.path.split('/')) {
+    // TODO handle numbers -> :id
+    //if (config.autoId && /^\d+$/.match(part)) ...
+    dir = join(dir, part);
+    await readConfig(config, dir);
+  }
+
   let variant = '';
-  if (req.method != 'GET' && req.method != 'OPTIONS') {
+  if (config.hash && req.method != 'GET' && req.method != 'OPTIONS') {
     const hash = crypto.createHash('sha256');
     hash.update(req.data);
     variant = '-sha256:' + hash.digest('hex');
@@ -68,8 +83,18 @@ function staticPath(req) {
   return join('_saved', req.path + '/' + req.method + variant + '.json');
 }
 
+async function readConfig(config, path) {
+  // Update config if these
+  let configFile = join(path, 'config.json');
+  if (await exists(configFile)) {
+    let data = await readFile(configFile, 'utf-8');
+    Object.assign(config, JSON.parse(data));
+    console.log('config ->', config, path);
+  }
+}
+
 async function findSaved(reqInfo, log) {
-  const path = staticPath(reqInfo);
+  const path = await staticPath(reqInfo);
   log('Looking', path);
   let json;
   try {
@@ -110,7 +135,7 @@ function sendResp(res, resp, log) {
 
 async function saveResp(resp, reqInfo, log) {
   if (MODE.saveRequests) {
-    let path = staticPath(reqInfo);
+    let path = await staticPath(reqInfo);
     if (MODE.saveIfExists || !(await exists(path))) {
       await saveRequest(resp, reqInfo, path, log);
     }
@@ -184,6 +209,12 @@ const MODES = {
     useBackend: true,
     saveRequests: true,
     desc: 'use saved request for all requests. contact backend and save missing requests.'
+  },
+  passthrough: {
+    useSaved: false,
+    useBackend: true,
+    saveRequests: false,
+    desc: 'contact backend for all requests. save nothing.'
   }
 };
 let MODE = MODES.proxy;
